@@ -139,11 +139,13 @@ int digitarNumero(int x, int y)
 
 void teclaAcaoNormal(TpEditor *Ed, char c, int *x, int *y)
 {
+	char del;
 	TpLinha *linhaAntes;
     switch(c)
     {
         case 8: //backspace
-            excluirCaracter(Ed, &(*x), &(*y));
+        	del = 0;
+            excluirCaracter(Ed, &(*x), &(*y), del);
             break;
         case 13: //enter
             inserirNovaLinha(Ed);
@@ -154,7 +156,6 @@ void teclaAcaoNormal(TpEditor *Ed, char c, int *x, int *y)
             if(c >= 32 && c <= 126)
             {
                 linhaAntes = Ed->atualL;
-                
                 inserirCaractere(Ed, c);
                 if(Ed->atualL != linhaAntes) 
                 {
@@ -171,8 +172,9 @@ void teclaAcaoNormal(TpEditor *Ed, char c, int *x, int *y)
 void teclaAcaoEspecial(TpEditor *Ed, char c, int *x, int *y, int modificado)
 {
     TpLinha *LiAtual;
-    int i, novaPos;
-    char s, str[150];
+    TpLetra *letAux;
+    int i, novaPos, numAux;
+    char s, str[150], del;
     FILE *ptr;
 
     switch(c)
@@ -218,7 +220,7 @@ void teclaAcaoEspecial(TpEditor *Ed, char c, int *x, int *y, int modificado)
         case 61: //F3
             salvarTexto(Ed);
             break;
-        case 63:
+        case 63: //F5
         	painelF5();
         	gotoxy(85,10); printf("Digite numeros! (ESC-sair)");
 			Ed->primeiraLinha = digitarNumero(102,4);
@@ -289,7 +291,7 @@ void teclaAcaoEspecial(TpEditor *Ed, char c, int *x, int *y, int modificado)
             }
             break;
 
-        case 72: // Cima
+        case 72: //cima
             if(Ed->atualL->ant != NULL) //a linha de cima existe?
             {
                 (*y)--;
@@ -335,21 +337,35 @@ void teclaAcaoEspecial(TpEditor *Ed, char c, int *x, int *y, int modificado)
             break;
         
         case 71: //Home
+        	Ed->cursor = NULL;
+        	Ed->pos = 0;
+        	*x = 2;
         	break;
         
         case 79: //End
+        	Ed->cursor = Ed->atualL->letraFim;
+        	Ed->pos = Ed->atualL->nmr;
+        	*x = Ed->pos+2;
         	break;
         
-        case 73: //Page Up
-        	break;
-        
-        case 81: //Page Down
-        	break;
+        case 73: //Page up
         	
-        case 82: //Insert
         	break;
         
-        case 83: //Delete
+        case 81: //Page down
+        	
+		    break;
+        	
+        case 82: //insert
+        	if(Ed->modoSobrescrita)
+        		Ed->modoSobrescrita = 0;
+        	else
+        		Ed->modoSobrescrita = 1;
+        	break;
+        
+        case 83: //del
+        	del = 1;
+        	excluirCaracter(Ed, &(*x), &(*y), del);
         	break;
     }
 }
@@ -376,7 +392,7 @@ void executar()
         	teclaAcaoNormal(Editor, tecla, &x, &y);
         	modificado=1;
 		}
-        LimparConteudo(2, 4, 81, Editor->qntdLinha+4); 
+        LimparConteudo(2, 4, 81, Editor->qntdLinha+3); 
         imprimirEditor(Editor);
     }
 	imprimirEditor(Editor);
