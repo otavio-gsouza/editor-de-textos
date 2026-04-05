@@ -7,7 +7,7 @@ typedef struct tpletra TpLetra;
 
 struct tplinha
 {
-	int nmr;
+	int nmr, id;
 	struct tplinha *prox, *ant;
 	struct tpletra *letraInicio, *letraFim;
 };
@@ -15,21 +15,40 @@ typedef struct tplinha TpLinha;
 
 struct tpeditor
 {
+	//geral
 	struct tplinha *inicioL, *fimL, *atualL, *linhaNoTopo;
 	struct tpletra *cursor;
-	int qntdLinha, pos, primeiraLinha, recuoEsq, recuoDir;
+	int qntdLinha, pos;
+	//para f5
+	int primeiraLinha, recuoEsq, recuoDir;
+	//para insert
 	int modoSobrescrita; //0 desativado, 1 ativado
 };
 typedef struct tpeditor TpEditor;
 
+struct listagen
+{
+	char letra;
+	char final;
+	struct listagen *prim;
+	struct listagen *prox;
+};
+typedef struct listagen ListaGen;
+
 TpLetra *criarLetra(char letra);
 TpLinha *criarLinha();
 TpEditor *criarEditor();
-void inserirCaractere(TpEditor *Ed, char letra, int *x, int *y);
+void inserirCaractere(TpEditor *Ed, ListaGen **L, char letra);
 void inserirNovaLinha(TpEditor *Ed);
 void excluirCaracter(TpEditor *Ed);
 void apagarLinha(TpEditor *Ed, TpLinha *Lin);
 void limparEditor(TpEditor *Ed);
+ListaGen *procuraLetraNaLg(ListaGen *L, char c);
+ListaGen *criaLg(char c);
+void inserirNaListaGen(ListaGen **L, char *palavra);
+int ehUltimaLinha_e_LinhaCheia(int resto, int nmr);
+void capturarPalavraAnterior(TpEditor *Ed, char *str);
+void recalcularIds(TpEditor *Ed);
 
 TpLetra *criarLetra(char letra)
 {
@@ -45,6 +64,7 @@ TpLinha *criarLinha()
 	nc->ant = nc->prox = NULL;
 	nc->letraFim = nc->letraInicio = NULL;
 	nc->nmr = 0;
+	nc->id = 0;
 	return nc;
 }
 
@@ -52,6 +72,7 @@ TpEditor *criarEditor()
 {
 	TpEditor *nc = (TpEditor*)malloc(sizeof(TpEditor));
 	nc->inicioL = nc->fimL = nc->atualL = criarLinha();
+	nc->atualL->id = 1;
 	nc->cursor = NULL;
 	nc->qntdLinha = 1;
 	nc->pos = 0;
@@ -61,9 +82,65 @@ TpEditor *criarEditor()
 	return nc;
 }
 
-void inserirCaractere(TpEditor *Ed, char letra)
+int ehUltimaLinha_e_LinhaCheia(int resto, int nmr)
+{
+	if(!resto)
+		if(nmr == 79)
+			return 1;	
+	return 0;
+}
+
+void capturarPalavraAnterior(TpEditor *Ed, char *str)
+{
+	TpLetra *auxLet;
+	char auxStr[80];
+	char flag;
+	int i, j;
+	
+	str[0]='\0';
+	i=j=0;
+	flag=1;
+	auxLet = Ed->cursor->ant;
+	
+	while(auxLet!=NULL && flag)
+	{
+		if((auxLet->letra >= 'A' && auxLet->letra <= 'Z') || (auxLet->letra >= 'a' && auxLet->letra <= 'z'))
+		{
+			auxStr[i++] = auxLet->letra;
+			auxLet = auxLet->ant;
+		}
+		else if (auxLet->letra == 21) //se for um caractere negrito, ignora
+            auxLet = auxLet->ant;
+		else
+			flag=0;
+	}
+	auxStr[i] = '\0';
+	while(i>0) //inverter a string
+	{
+		i--;
+		str[j] = toupper(auxStr[i]);
+		j++;
+	}
+	str[j] = '\0';
+}
+
+void recalcularIds(TpEditor *Ed) 
+{
+    TpLinha *aux = Ed->inicioL;
+    int contador = 1;
+
+    while (aux != NULL) 
+	{
+        aux->id = contador;
+        contador++;
+        aux = aux->prox;
+    }
+}
+
+void inserirCaractere(TpEditor *Ed, ListaGen **L, char letra)
 {
 	char let;
+	char palavraParaAprender[80];
 	TpLetra *novaLetra;
 	TpLetra *auxLet = NULL;
 	TpLinha *auxLin, *nova;
@@ -71,7 +148,7 @@ void inserirCaractere(TpEditor *Ed, char letra)
 	if(!Ed->modoSobrescrita)
 	{
 		novaLetra = criarLetra(letra);
-		if(Ed->atualL->letraInicio == NULL)// linha vazia
+		if(Ed->atualL->letraInicio == NULL) // linha vazia
 			Ed->atualL->letraInicio = Ed->atualL->letraFim = novaLetra;
 		else if(Ed->cursor == NULL) //inserir antes da primeira letra
 		{
@@ -96,8 +173,16 @@ void inserirCaractere(TpEditor *Ed, char letra)
 		Ed->atualL->nmr++;
 		Ed->pos++;
 		
+		//se o caracter digitado não for uma letra, a palavra anterior acabou
+		if (!((letra >= 'A' && letra <= 'Z') || (letra >= 'a' && letra <= 'z')))
+		{
+            capturarPalavraAnterior(Ed, palavraParaAprender);
+            if (strlen(palavraParaAprender) > 2) //sí insere na listagen se a palavra tiver mais de dois caracteres
+                inserirNaListaGen(&*L, palavraParaAprender);
+        }
+		
 		auxLin = Ed->atualL;
-		while(auxLin != NULL && auxLin->nmr>80)
+		if(auxLin->nmr>79)
 		{
 			auxLet = auxLin->letraFim; //auxLet aponta para a ultima letra da linha atual
 			
@@ -106,13 +191,20 @@ void inserirCaractere(TpEditor *Ed, char letra)
 			auxLin->nmr--; //decrementa a quantidade de letras na linha atual
 			
 			auxLet->ant = NULL; //limpa a ultima letra para inserir
+			
+			nova = criarLinha();
+	        nova->ant = auxLin;
 			if(auxLin->prox == NULL) //a proxima linha não existe?
 			{
-				nova = criarLinha();
-	            nova->ant = auxLin;
 	            auxLin->prox = nova;
 	            Ed->fimL = nova;
 	            Ed->qntdLinha++;
+			}
+			else //a proxima linha existe, então remaneja
+			{
+				auxLin->prox->ant = nova;
+				nova->prox = auxLin->prox;
+				auxLin->prox = nova;
 			}
 	        if(Ed->cursor == auxLet) //cursor está na ultima letra? se sim, ele cai
 	        {
@@ -120,16 +212,9 @@ void inserirCaractere(TpEditor *Ed, char letra)
 	            Ed->pos = 1;
 	        }
 	        //insere a ultima letra na proxima linha atualizando ant e prox 
-	        auxLet->prox = auxLin->prox->letraInicio; 
-			if(auxLin->prox->letraInicio != NULL) //linha não vazia?
-	            auxLin->prox->letraInicio->ant = auxLet;
-	        else //linha vazia, só atualiza o fim
-	            auxLin->prox->letraFim = auxLet;
-	
-	        auxLin->prox->letraInicio = auxLet; //atualiza novo inicio da proxima linha (letra que caiu)
-	        auxLin->prox->nmr++; //atualiza a quantidade de letras da proxima linha
-	
-	        auxLin = auxLin->prox; //verifica se a proxima linha também estourou
+	        nova->letraInicio = nova->letraFim = auxLet;
+	        nova->nmr++;
+	        recalcularIds(Ed);
 	    }
 	}
 	else
@@ -149,7 +234,7 @@ void inserirCaractere(TpEditor *Ed, char letra)
 			else
 	        {
 	            Ed->modoSobrescrita = 0; 
-	            inserirCaractere(Ed, letra); 
+	            inserirCaractere(Ed, &*L, letra); 
 	            Ed->modoSobrescrita = 1; 
 	        }	
 		}
@@ -160,6 +245,7 @@ void inserirNovaLinha(TpEditor *Ed)
 {
 	TpLetra *auxLet;
 	TpLinha *auxLin = criarLinha();
+	auxLin->id = Ed->qntdLinha+1;
 	if(Ed->cursor==NULL) //cursor esta atras da primeira letra, então cria uma linha atrás dessa linha
 	{
 		//tudo que está na atual passa a ser da nova linha
@@ -196,16 +282,106 @@ void inserirNovaLinha(TpEditor *Ed)
 		Ed->fimL = auxLin;
 	Ed->atualL->prox = auxLin;
 	
+	
 	Ed->atualL = auxLin;
 	Ed->qntdLinha++;
+	recalcularIds(Ed);
 	Ed->pos = 0;
 	Ed->cursor = NULL;
 }
 
+ListaGen *criaLg(char c)
+{
+	ListaGen *nc = (ListaGen*)malloc(sizeof(ListaGen));
+	nc->final = 'f';
+	nc->letra = c;
+	nc->prim = nc->prox = NULL;
+	return nc;
+}
+
+ListaGen *procuraLetraNaLg(ListaGen *L, char c)
+{
+	ListaGen *aux = L;
+    while(aux != NULL && c > aux->letra)
+        aux = aux->prox;
+        
+    if(aux != NULL && aux->letra == c)
+        return aux;
+    return NULL;
+}
+
+void inserirNaListaGen(ListaGen **L, char *palavra)
+{
+	char flag;
+	int i;
+	ListaGen *achou, *atual, *nova;
+	
+	i = 0;
+	while(palavra[i] != '\0')
+	{
+		if(i == 0)
+			achou = procuraLetraNaLg(*L, palavra[i]);
+		else
+			achou = procuraLetraNaLg(atual->prim, palavra[i]);
+		
+		if(achou == NULL)
+		{
+			nova = criaLg(palavra[i]);
+			if(i == 0) //inserção na primeira camada
+			{
+				if(*L == NULL || (*L)->letra > nova->letra) //deve inserir na primeira posição
+				{
+					nova->prox = *L;
+					*L = nova;
+				}
+				else //insere no meio ou fim
+				{
+					atual = *L;
+				    while (atual->prox != NULL && atual->prox->letra < nova->letra)
+				        atual = atual->prox;
+				    nova->prox = atual->prox;
+				    atual->prox = nova;
+				}
+				achou = nova;
+			}
+			else
+			{
+				if(atual->prim == NULL || nova->letra > atual->prim->letra)
+				{
+					nova->prox = atual->prim;
+					atual->prim = nova;
+				}
+				else
+				{
+					atual = atual->prim;
+					while (atual->prox != NULL && atual->prox->letra < nova->letra)
+			            atual = atual->prox;
+			        nova->prox = atual->prox;
+			        atual->prox = nova;
+				}
+				achou = nova;
+			}
+		}
+		
+		if(palavra[i+1] == '\0')
+			achou->final = 't';
+		
+		i++;
+		atual = achou;
+	}
+}
+
 void apagarLinha(TpEditor *Ed, TpLinha *Lin)
 {
+	TpLinha *aux;
 	if(Lin->ant!=NULL) //verifica se não é a primeira linha
 	{
+		aux = Lin->prox;
+		while(aux!=NULL)
+		{
+			aux->id--;
+			aux = aux->prox;
+		}
 		if(Ed->atualL == Lin) //verificação de segurança
 			Ed->atualL = Ed->atualL->ant;
 		if(Lin->prox==NULL) //é a ultima linha?
@@ -220,6 +396,7 @@ void apagarLinha(TpEditor *Ed, TpLinha *Lin)
 		}
 		free(Lin);
 		Ed->qntdLinha--;
+		recalcularIds(Ed);
 	}
 }
 
@@ -304,7 +481,7 @@ void excluirCaracter(TpEditor *Ed, int *x, int *y, char del)
 				
 				apagarLinha(Ed, Ed->atualL->prox);
 			}
-			else if(Ed->atualL->ant->nmr == 80) //a linha anterior possui 80 caracteres
+			else if(Ed->atualL->ant->nmr == 79) //a linha anterior possui 80 caracteres
 			{
 				auxLet = Ed->atualL->ant->letraFim; //salva a ULTIMA letra da linha anterior para isolar e dar free
 				
@@ -326,7 +503,7 @@ void excluirCaracter(TpEditor *Ed, int *x, int *y, char del)
 			}
 			else //união quebrada
 			{
-				resto = 80 - Ed->atualL->ant->nmr; //operação que calcula o restante de letras que ainda cabem na linha anterior
+				resto = 79 - Ed->atualL->ant->nmr; //operação que calcula o restante de letras que ainda cabem na linha anterior
 	            auxLet=Ed->atualL->letraInicio;
 	            
 	            pedacoQueSobe = Ed->atualL->letraInicio; //guarda inicio

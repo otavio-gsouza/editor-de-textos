@@ -2,6 +2,7 @@ void Moldura(int Ci, int Li, int Cf, int Lf, int CorT, int CorF);
 void PainelPrincipal(void);
 void LimparConteudo(int Ci, int Li, int Cf, int Lf);
 void painelF5(void);
+void PainelDados(int pagina, int coluna, int linha, int qntd_linha);
 
 void LimparConteudo(int Ci, int Li, int Cf, int Lf)
 {
@@ -69,9 +70,18 @@ void painelF5(void)
 	linhaReta(84,9,114,7,0);
 }
 
-void painel(void)
+void PainelDados(int pagina, int coluna, int linha, int qntd_linha)
+{
+	gotoxy(83, 23); printf("Linha: %d", linha);
+	gotoxy(83,24); printf("Coluna: %d", coluna);
+	gotoxy(83, 25); printf("Qtd_Linha: %d", qntd_linha);
+	gotoxy(83, 26); printf("Pagina Atual: %d", pagina);
+    Moldura(82,22,99,27,7,0);
+}
+
+void painelPrincipal(void)
 { 
-    Moldura(1, 1, 82, 27, 7, 0); 
+    Moldura(1, 1, 81, 27, 7, 0); 
 
     gotoxy(5, 2);  printf("F2-Abrir");
     gotoxy(26, 2); printf("F3-Salvar");
@@ -79,10 +89,10 @@ void painel(void)
     gotoxy(70, 2); printf("F5-Exibir");
     
     gotoxy(1, 3);  printf("%c", 204);
-    gotoxy(82, 3); printf("%c", 185);
-    linhaReta(2, 3, 82, 7, 0);    
+    gotoxy(81, 3); printf("%c", 185);
+    linhaReta(2, 3, 81, 7, 0);    
 
     gotoxy(1, 25);  printf("%c", 204);
-    gotoxy(82, 25); printf("%c", 185);
-    linhaReta(2, 25, 82, 7, 0);
+    gotoxy(81, 25); printf("%c", 185);
+    linhaReta(2, 25, 81, 7, 0);
 }

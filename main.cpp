@@ -35,7 +35,7 @@ char criaArqTexto(TpEditor *Ed, char *str)
 	return 1;
 }
 
-char atualizarEditor(TpEditor *Ed, FILE *ptr)
+char atualizarEditor(TpEditor *Ed, FILE *ptr, ListaGen **L)
 {
 	char c;
 	c = fgetc(ptr);
@@ -47,9 +47,7 @@ char atualizarEditor(TpEditor *Ed, FILE *ptr)
 			Ed->qntdLinha++;
 		}
 		else
-		{
-			inserirCaractere(Ed, c);
-		}
+			inserirCaractere(Ed, &*L, c);
 		c = fgetc(ptr);		
 	}
 	return 0;
@@ -63,39 +61,56 @@ void salvarTexto(TpEditor *Ed)
 	gets(str);
 	if(criaArqTexto(Ed, str))
 	{
-		LimparConteudo(2, 26, 81, 26);
+		LimparConteudo(2, 26, 80, 26);
 		gotoxy(3,26); printf("Salvo com sucesso!");
 		Sleep(900);	
 	}
 	else
 	{
-		LimparConteudo(2, 26, 81, 26);
+		LimparConteudo(2, 26, 80, 26);
 		gotoxy(3,26); printf("Erro ao salvar...");
 		Sleep(900);
 	}
-	LimparConteudo(2, 26, 81, 26);
+	LimparConteudo(2, 26, 80, 26);
 }
 
-void imprimirEditor(TpEditor *Ed)
+void imprimirEditor(TpEditor *Ed) 
 {
-    TpLinha *auxLin = Ed->inicioL;
-    TpLetra *auxLet;
+    TpLinha *auxL = Ed->linhaNoTopo;
+    TpLetra *auxC;
     int x, y=4;
+    int negritoAtivo = 0; //0 = normal, 1 = negrito
 
-    while(auxLin != NULL && y <= 24)
-    {
-        auxLet = auxLin->letraInicio;
+    while(auxL != NULL && y<=24) 
+	{
+        auxC = auxL->letraInicio;
         x = 2;
-        while(auxLet != NULL && x <= 81)
-        {
-            gotoxy(x, y);
-            printf("%c", auxLet->letra);
-            auxLet = auxLet->prox;
-            x++;
+        gotoxy(x, y);
+        while(auxC != NULL && x <= 81)
+		{
+			if(auxC->letra == 21)
+			{
+				if(negritoAtivo)	
+					negritoAtivo = 0;
+				else
+					negritoAtivo = 1;
+					
+				if (negritoAtivo)
+                    textcolor(15);
+                else
+                    textcolor(7);
+			}
+			else
+			{
+				printf("%c", auxC->letra);
+				x++;
+			}
+            auxC = auxC->prox;
         }
-        auxLin = auxLin->prox;
+        auxL = auxL->prox;
         y++;
     }
+    textcolor(7);
 }
 
 int digitarNumero(int x, int y)
@@ -127,7 +142,7 @@ int digitarNumero(int x, int y)
 	}
 	if(c==27)
 		return -1;
-	if (i == 1)
+	if(i == 1)
 		return str[0] - 48; //possui somente um caracter, entao devolve a conversão desse mesmo caracter
 	else
 	{
@@ -137,41 +152,154 @@ int digitarNumero(int x, int y)
 	}
 }
 
-void teclaAcaoNormal(TpEditor *Ed, char c, int *x, int *y)
+void teclaAcaoNormal(TpEditor *Ed, char c, int *x, int *y, ListaGen **L)
 {
+	int resto;
 	char del;
 	TpLinha *linhaAntes;
+	resto = Ed->qntdLinha%21;
     switch(c)
     {
         case 8: //backspace
-        	del = 0;
-            excluirCaracter(Ed, &(*x), &(*y), del);
+        	if(Ed->cursor == NULL && Ed->atualL == Ed->linhaNoTopo && Ed->linhaNoTopo->ant != NULL){ //não deixa apagar se essa condição for atendida
+			}
+        	else
+        	{
+        		del = 0;
+				excluirCaracter(Ed, &(*x), &(*y), del);
+			}
             break;
         case 13: //enter
-            inserirNovaLinha(Ed);
-            (*y)++;
-            *x = 2;
+            if(resto)
+            {
+            	inserirNovaLinha(Ed);
+            	(*y)++;
+            	*x = 2;
+        	}
             break;
         default: //caracteres imprimíveis
-            if(c >= 32 && c <= 126)
-            {
-                linhaAntes = Ed->atualL;
-                inserirCaractere(Ed, c);
-                if(Ed->atualL != linhaAntes) 
-                {
-                    *x = 3;
-                    (*y)++;
-                }
-                else
-                    *x = Ed->pos + 2;
-            }
+        	if(!ehUltimaLinha_e_LinhaCheia(resto, Ed->atualL->nmr))
+        	{
+        		if(c >= 32 && c <= 126)
+	            {
+	                linhaAntes = Ed->atualL;
+	                inserirCaractere(Ed, &*L, c);
+	                if(Ed->atualL != linhaAntes) 
+	                {
+	                    *x = 3;
+	                    (*y)++;
+	                }
+	                else
+	                    *x = Ed->pos + 2;
+	            }
+			}
             break;
     }
 }
 
-void teclaAcaoEspecial(TpEditor *Ed, char c, int *x, int *y, int modificado)
+void exibirTextoFormatado(TpEditor *Ed) 
 {
-    TpLinha *LiAtual;
+    TpLinha *auxL = Ed->inicioL;
+    TpLetra *auxC;
+    char palavra[81], ultimo;
+    int p = 0; 
+    int colunaAtual, yImpressao, limiteDireito, margemEsquerdaBase;
+    int fimDoTexto = 0;
+    int negritoAtivo = 0;
+    int ehNovoParagrafo = 1;
+
+    LimparConteudo(2, 4, 80, 24);
+    yImpressao = 4;
+    
+    limiteDireito = 81 - Ed->recuoDir; 
+    margemEsquerdaBase = 2 + Ed->recuoEsq;
+    
+    colunaAtual = 2 + Ed->primeiraLinha;
+
+    while (auxL != NULL && fimDoTexto == 0) 
+    {
+        auxC = auxL->letraInicio;
+
+        while (auxC != NULL && yImpressao <= 24) 
+        {
+            if (auxC->letra == 21) 
+            {
+                negritoAtivo = !negritoAtivo;
+                if (negritoAtivo) textcolor(15);
+                else textcolor(7);
+            }
+            else if (auxC->letra == ' ') 
+            {
+                if (p > 0) 
+                {
+                    palavra[p] = '\0';
+
+                    if (colunaAtual + p > limiteDireito) 
+                    {
+                        yImpressao++;
+                        colunaAtual = margemEsquerdaBase;
+                    }
+                    if (yImpressao <= 24) 
+                    {
+                        gotoxy(colunaAtual, yImpressao);
+                        printf("%s ", palavra);
+                        
+						ultimo = palavra[p-1];
+                        if (ultimo == '.' || ultimo == '!' || ultimo == '?') 
+                        {
+                            yImpressao++;
+                            colunaAtual = 2 + Ed->primeiraLinha;
+                        }
+                        else 
+                            colunaAtual += p + 1;
+                    }
+                    p = 0; 
+                }
+            }
+            else 
+                if (p < 80) palavra[p++] = auxC->letra;
+            auxC = auxC->prox;
+        }
+        if (p > 0) 
+        {
+            palavra[p] = '\0';
+            if (colunaAtual + p > limiteDireito) 
+            {
+                yImpressao++;
+                colunaAtual = margemEsquerdaBase;
+            }
+            if (yImpressao <= 24) 
+            {
+                gotoxy(colunaAtual, yImpressao);
+                printf("%s ", palavra);
+                
+                char ultimo = palavra[p-1];
+                if (ultimo == '.' || ultimo == '!' || ultimo == '?') 
+                {
+                    yImpressao++;
+                    colunaAtual = 2 + Ed->primeiraLinha;
+                }
+                else 
+                    colunaAtual += p + 1;
+            }
+            p = 0;
+        }
+        auxL = auxL->prox;
+        if (auxL == NULL || yImpressao > 24)
+            fimDoTexto = 1;
+    }
+    textcolor(11); gotoxy(2, 26);
+    printf("MODO VISUALIZACAO (Qualquer tecla para voltar)");
+    textcolor(7); getch();
+
+    LimparConteudo(2, 4, 80, 24);
+	LimparConteudo(2, 26, 80, 26);
+    imprimirEditor(Ed);
+}
+
+void teclaAcaoEspecial(TpEditor *Ed, char c, int *x, int *y, int modificado, ListaGen **L, int *pagina)
+{
+    TpLinha *LiAtual, *auxLin, *linhaAntes;
     TpLetra *letAux;
     int i, novaPos, numAux;
     char s, str[150], del;
@@ -189,23 +317,23 @@ void teclaAcaoEspecial(TpEditor *Ed, char c, int *x, int *y, int modificado)
             		gotoxy(48, 26); 
 					s = getch();
 				}while(s!='s' && s!='n');
-				LimparConteudo(3,26,48,26);
+				LimparConteudo(3,26,47,26);
 				if(s=='s')
-					teclaAcaoEspecial(Ed,61,x,y,modificado); //salva o txt atual
+					teclaAcaoEspecial(Ed,61,x,y,modificado, &*L, &*pagina); //salva o txt atual
 			}
 			//limpa depois de ter certeza que vai conseguir abrir com fopen
 			gotoxy(3,24); printf("Ex: C:\\teste\\arquivo.txt");
 			gotoxy(3,26); printf("Digite o caminho: ");
 			fflush(stdin);
 			gets(str);
-			LimparConteudo(3,24,48,24);
-			LimparConteudo(3,26,81,26);
+			LimparConteudo(3,24,47,24);
+			LimparConteudo(3,26,80,26);
 			ptr = fopen(str, "r");
 			if(ptr!=NULL)
 			{
 				limparEditor(Ed); //limpa o editor para ser alimentado com o que for aberto
-				LimparConteudo(2,4,81,Ed->qntdLinha);
-				atualizarEditor(Ed, ptr);
+				LimparConteudo(2,4,80,24);
+				atualizarEditor(Ed, ptr, &*L);
 				*y = Ed->qntdLinha+3;
 				*x = Ed->pos+2;
 				fclose(ptr);
@@ -214,7 +342,7 @@ void teclaAcaoEspecial(TpEditor *Ed, char c, int *x, int *y, int modificado)
 			{
 				gotoxy(3,26); printf("Caminho invalido ou Erro ao abrir o arquivo!");
 				Sleep(1000);
-				LimparConteudo(3,26,81,26);
+				LimparConteudo(3,26,80,26);
 			}	
             break;
         case 61: //F3
@@ -223,29 +351,51 @@ void teclaAcaoEspecial(TpEditor *Ed, char c, int *x, int *y, int modificado)
         case 63: //F5
         	painelF5();
         	gotoxy(85,10); printf("Digite numeros! (ESC-sair)");
-			Ed->primeiraLinha = digitarNumero(102,4);
-			if(Ed->primeiraLinha!=-1)
-			{
-				Ed->recuoEsq = digitarNumero(102,6);
-				if(Ed->recuoEsq!=-1)
-					Ed->recuoDir = digitarNumero(101,8);
-			}
+			numAux = digitarNumero(102, 4); //primeira linha
+		    if(numAux != -1) 
+		    {
+		        Ed->primeiraLinha = numAux;
+		        numAux = digitarNumero(102, 6); //recuo esquerdo
+		        if (numAux != -1) 
+		        {
+		            Ed->recuoEsq = numAux;
+		            numAux = digitarNumero(101, 8); //recuo direito
+		            if (numAux != -1)
+		                Ed->recuoDir = numAux;
+		        }
+		    }
 			LimparConteudo(85, 10, 113, 10);
-			if(Ed->primeiraLinha == -1 || Ed->recuoDir == -1 || Ed->recuoEsq == -1)
-			{
-				Ed->primeiraLinha = -1;
-				Ed->recuoDir = -1;
-				Ed->recuoEsq = -1;
-				gotoxy(85, 10); printf("Saindo sem salvar...");
-				Sleep(900);
-			}
+			if (numAux == -1) //vericica se cancelou com ESC em qualquer etapa
+		    {
+		        Ed->primeiraLinha = -1;
+		        Ed->recuoDir = -1;
+		        Ed->recuoEsq = -1;
+		        gotoxy(85, 10); printf("Cancelado...");
+		        Sleep(900);
+		    }
 			else
 			{
 				gotoxy(85, 10); printf("Configurado!");
-				Sleep(900);	
+		    	Sleep(900);
+		        exibirTextoFormatado(Ed);
 			}
 			LimparConteudo(83, 1, 114, 11);
         	break;
+        	
+        case 68: //F10 - Negrito
+        	ListaGen *l;
+        	l = NULL;
+            linhaAntes = Ed->atualL;
+            inserirCaractere(Ed, &l, 21);
+            if(Ed->atualL != linhaAntes) 
+            {
+                *x = 3;
+                (*y)++;
+            }
+            else
+                *x = Ed->pos + 2;
+        	break;
+        	
         case 75: //esquerda
             if(Ed->cursor != NULL && *x > 2)
             {
@@ -292,7 +442,7 @@ void teclaAcaoEspecial(TpEditor *Ed, char c, int *x, int *y, int modificado)
             break;
 
         case 72: //cima
-            if(Ed->atualL->ant != NULL) //a linha de cima existe?
+            if(Ed->atualL->ant != NULL && *y > 4) //a linha de cima existe e linha não é a primeira?
             {
                 (*y)--;
                 LiAtual = Ed->atualL; 
@@ -314,7 +464,7 @@ void teclaAcaoEspecial(TpEditor *Ed, char c, int *x, int *y, int modificado)
             break;
 
         case 80: //baixo
-            if(Ed->atualL->prox != NULL) //a linha de baixo existe?
+            if(Ed->atualL->prox != NULL && *y < 24) //a linha de baixo existe e linha não é a ultima?
             {
                 (*y)++;
                 LiAtual = Ed->atualL; //guarda a linha atual
@@ -348,13 +498,53 @@ void teclaAcaoEspecial(TpEditor *Ed, char c, int *x, int *y, int modificado)
         	*x = Ed->pos+2;
         	break;
         
-        case 73: //Page up
-        	
-        	break;
-        
-        case 81: //Page down
-        	
+        case 73: //page up
+		    i = 0;
+		    while(Ed->linhaNoTopo->ant != NULL && i < 21) 
+			{
+		        Ed->linhaNoTopo = Ed->linhaNoTopo->ant;
+		        i++;
+		    }
+		    if(i > 0) 
+			{
+		        Ed->atualL = Ed->linhaNoTopo;
+		        Ed->cursor = NULL;
+		        Ed->pos = 0;
+		        *x = 2;
+		        *y = 4;
+		        if(*pagina > 21)
+		        	*pagina -= 21;
+		    }
 		    break;
+        
+        case 81: //page down
+	    i = 0;
+	    auxLin = Ed->linhaNoTopo;
+	    while(auxLin->prox != NULL && i < 20) //conta quantas linhas existem até este topo
+		{
+	        auxLin = auxLin->prox;
+	    	i++;
+	    }
+	    if(i == 20) 
+	    {
+	        if(auxLin->prox == NULL)
+	        {
+	            Ed->atualL = auxLin;
+	            inserirNovaLinha(Ed);
+	            Ed->linhaNoTopo = Ed->atualL;
+	        }
+	        else
+	        {
+	            Ed->linhaNoTopo = auxLin->prox;
+	            Ed->atualL = Ed->linhaNoTopo;
+	        }
+	        Ed->cursor = NULL;
+	        Ed->pos = 0;
+	        *x = 2;
+	        *y = 4;
+	        *pagina+=21;
+	    }
+	    break;
         	
         case 82: //insert
         	if(Ed->modoSobrescrita)
@@ -370,37 +560,147 @@ void teclaAcaoEspecial(TpEditor *Ed, char c, int *x, int *y, int modificado)
     }
 }
 
+int buscarSugestao(ListaGen *L, char *incompleta, char *sugestao) 
+{
+    ListaGen *atual = L;
+    int i, pos;
+	
+	i = 0;
+    while (incompleta[i] != '\0' && atual != NULL) 
+	{
+        atual = procuraLetraNaLg(atual, incompleta[i]);
+        if (atual != NULL) 
+		{
+            if (incompleta[i + 1] != '\0')
+                atual = atual->prim;
+            i++;
+        }
+    }
+    if (atual == NULL || atual->prim == NULL)//palavra nao encontrada na lista gen
+		return 0;
+
+    strcpy(sugestao, incompleta);
+    pos = i;
+    atual = atual->prim;
+
+    while (atual != NULL) 
+	{
+        if (atual->prox != NULL) //se tem um prox, quer dizer que não tem certeza
+			return 0;
+        sugestao[pos++] = atual->letra;
+        if (atual->final == 't') 
+		{
+            sugestao[pos] = '\0';
+            return 1; //encontrou uma palavra completa e unica
+        }
+        atual = atual->prim;
+    }
+    return 0;
+}
+
+void capturarPalavraIncompleta(TpEditor *Ed, char *palavra) 
+{
+    TpLetra *aux = Ed->cursor;
+    char temp[80];
+    int i, j;
+    
+	i=j=0;
+    while(aux != NULL && ((aux->letra >= 'A' && aux->letra <= 'Z') || (aux->letra >= 'a' && aux->letra <= 'z') || aux->letra == 21))
+	{
+        if (aux->letra != 21)
+            temp[i++] = aux->letra;
+        aux = aux->ant;
+    }
+    temp[i] = '\0';
+    
+    while (i > 0) //inverte a palavra invertida e deixa em maiusculo
+        palavra[j++] = toupper(temp[--i]);
+    palavra[j] = '\0';
+}
+
 void executar()
 {
 	TpEditor *Editor = criarEditor();
-	char tecla=0;
-	int x,y, modificado=0;
+	TpLinha *linhaAntes;
+	ListaGen *palavras = NULL;
+	char tecla, temSugestao;
+	char palavraIncompleta[50], sugestao[50];
+	int x,y, modificado, pagina, teste, i;
 	
-	x=2;
+	temSugestao = 0;
+	tecla = 0;
+	pagina = 21;
+	modificado=0;
+	x=2; 
 	y=4;
 	while(tecla != 62) //F4
     {
-        gotoxy(x, y);
+    	PainelDados(pagina/21, x-1, Editor->atualL->id, Editor->qntdLinha);
+    	gotoxy(x, y);
         tecla = getch(); 
-        if(tecla == 0 || (unsigned char)tecla == 224) //"unsigned char" força o PC a ler 224 como 224, e nao como -32, para as setas funcionarem
+        if(tecla == 13) //verifica se aceita sugestao, ou insere uma nova linha
         {
+        	if(temSugestao) //aceita sugestao
+        	{
+        		i = strlen(palavraIncompleta);
+        		while (sugestao[i] != '\0') 
+				{
+					linhaAntes = Editor->atualL;
+	                inserirCaractere(Editor, &palavras, tolower(sugestao[i]));
+	                if(Editor->atualL != linhaAntes) 
+	                {
+	                    x = 3;
+	                    y++;
+	                }
+	                else
+	                    x = Editor->pos + 2;
+		            i++;
+		        }
+		        LimparConteudo(2, 26, 80, 26); //limpa o espaço de sugestão
+		        temSugestao = 0;
+			}
+			else //apenas insere uma nova linha
+				teclaAcaoNormal(Editor, tecla, &x, &y, &palavras);
+		}
+        else if(tecla == 0 || (unsigned char)tecla == 224) //"unsigned char" força o PC a ler 224 como 224, e nao como -32, para as setas funcionarem
+        {
+        	if(temSugestao)
+        		LimparConteudo(2, 26, 80, 26); //limpa o espaço de sugestão
             tecla = getch(); 
-            teclaAcaoEspecial(Editor, tecla, &x, &y, modificado); //teclas especiais vem em dois códigos: 0/224 + codigo real
+            if(tecla == 73 || tecla == 81)
+            	LimparConteudo(2, 4, 80, 24);
+            teclaAcaoEspecial(Editor, tecla, &x, &y, modificado, &palavras, &pagina); //teclas especiais vem em dois códigos: 0/224 + codigo real
         }
         else if(tecla != 62)
         {
-        	teclaAcaoNormal(Editor, tecla, &x, &y);
+        	if(temSugestao)
+        		LimparConteudo(2, 26, 80, 26); //limpa o espaço de sugestão
+        	teclaAcaoNormal(Editor, tecla, &x, &y, &palavras);
+        	capturarPalavraIncompleta(Editor, palavraIncompleta);
+        	if(strlen(palavraIncompleta) >= 3 && buscarSugestao(palavras, palavraIncompleta, sugestao)) //so sugere se digitou mais de 3 letras, e se existe na lista gen
+        	{
+        		gotoxy(2, 26);
+		        textcolor(5);
+		        printf("Sugestao: %s (ENTER para aceitar)", sugestao);
+		        textcolor(7);
+		        temSugestao = 1;
+			}
+			else
+				temSugestao = 0;
+        	if(tecla == 8 || tecla == 81 || tecla == 73)
+        		LimparConteudo(2, 4, 80, 24);
+        	else
+        		LimparConteudo(2, y, 80, 4 + (Editor->atualL->id - Editor->linhaNoTopo->id));
         	modificado=1;
 		}
-        LimparConteudo(2, 4, 81, Editor->qntdLinha+3); 
+		LimparConteudo(83,23,98,26); //limpa o painel de dados
         imprimirEditor(Editor);
     }
-	imprimirEditor(Editor);
 }
 
 int main()
 {
-	painel();
+	painelPrincipal();
 	executar();
 	gotoxy(1,27);
 	return 0;
